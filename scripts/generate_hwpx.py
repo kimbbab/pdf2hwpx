@@ -31,6 +31,7 @@ def write_hwpx(data, out_path):
         zf.writestr("version.xml", version_xml())
         zf.writestr("settings.xml", settings_xml())
         zf.writestr("META-INF/container.xml", container_xml())
+        zf.writestr("META-INF/container.rdf", container_rdf_xml())
         zf.writestr("META-INF/manifest.xml", manifest_xml())
         zf.writestr("Contents/content.hpf", content_hpf_xml())
         zf.writestr("Contents/header.xml", header_xml())
@@ -40,6 +41,7 @@ def write_hwpx(data, out_path):
 
 def build_section(data):
     paragraphs = []
+    paragraphs.append(section_properties_paragraph())
     title = data.get("title") or "시험지 풀이해설"
     paragraphs.append(paragraph([{"t": title}], char="1", height=1400))
     info = data.get("info") or {}
@@ -73,9 +75,48 @@ def build_section(data):
         '<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>'
         '<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" '
         'xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" '
-        'xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core">'
+        'xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core" '
+        'xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head">'
         + "".join(paragraphs)
         + "</hs:sec>"
+    )
+
+
+def section_properties_paragraph():
+    sec_pr = (
+        '<hp:secPr id="" textDirection="HORIZONTAL" spaceColumns="1134" tabStop="8000" '
+        'tabStopVal="4000" tabStopUnit="HWPUNIT" outlineShapeIDRef="0" memoShapeIDRef="0" '
+        'textVerticalWidthHead="0" masterPageCnt="0">'
+        '<hp:grid lineGrid="0" charGrid="0" wonggojiFormat="0"/>'
+        '<hp:startNum pageStartsOn="BOTH" page="0" pic="0" tbl="0" equation="0"/>'
+        '<hp:visibility hideFirstHeader="0" hideFirstFooter="0" hideFirstMasterPage="0" '
+        'border="SHOW_ALL" fill="SHOW_ALL" hideFirstPageNum="0" hideFirstEmptyLine="0" showLineNumber="0"/>'
+        '<hp:lineNumberShape restartType="0" countBy="0" distance="0" startNumber="0"/>'
+        '<hp:pagePr landscape="NARROWLY" width="59528" height="84186" gutterType="LEFT_ONLY">'
+        '<hp:margin header="0" footer="0" gutter="0" left="4251" right="4251" top="4251" bottom="4251"/>'
+        '</hp:pagePr>'
+        '<hp:footNotePr><hp:autoNumFormat type="DIGIT" userChar="" prefixChar="" suffixChar=")" supscript="0"/>'
+        '<hp:noteLine length="24662" type="SOLID" width="0.12 mm" color="#000000"/>'
+        '<hp:noteSpacing betweenNotes="283" belowLine="567" aboveLine="850"/>'
+        '<hp:numbering type="CONTINUOUS" newNum="1"/>'
+        '<hp:placement place="EACH_COLUMN" beneathText="0"/></hp:footNotePr>'
+        '<hp:endNotePr><hp:autoNumFormat type="DIGIT" userChar="" prefixChar="" suffixChar="." supscript="0"/>'
+        '<hp:noteLine length="24662" type="SOLID" width="0.12 mm" color="#000000"/>'
+        '<hp:noteSpacing betweenNotes="1984" belowLine="567" aboveLine="850"/>'
+        '<hp:numbering type="CONTINUOUS" newNum="1"/>'
+        '<hp:placement place="END_OF_DOCUMENT" beneathText="0"/></hp:endNotePr>'
+        '<hp:pageBorderFill type="BOTH" borderFillIDRef="0" textBorder="PAPER" '
+        'headerInside="0" footerInside="0" fillArea="PAPER">'
+        '<hp:offset left="1417" right="1417" top="1417" bottom="1417"/>'
+        '</hp:pageBorderFill>'
+        '</hp:secPr>'
+        '<hp:ctrl><hp:colPr id="" type="NEWSPAPER" layout="LEFT" colCount="1" sameSz="1" sameGap="0"/></hp:ctrl>'
+    )
+    return (
+        '<hp:p id="2147483648" paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">'
+        f'<hp:run charPrIDRef="0">{sec_pr}</hp:run>'
+        + make_lineseg(1000)
+        + "</hp:p>"
     )
 
 
@@ -127,6 +168,7 @@ def equation_xml(script):
         'holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" '
         'vertOffset="0" horzOffset="0"/>'
         '<hp:outMargin left="56" right="56" top="0" bottom="0"/>'
+        '<hp:shapeComment>수식입니다.</hp:shapeComment>'
         f"<hp:script>{xml(script)}</hp:script>"
         "</hp:equation>"
     )
@@ -241,7 +283,7 @@ def plain_text(parts):
 
 def header_xml():
     return """<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
-<hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" version="1.0">
+<hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" version="1.4" secCnt="1">
   <hh:beginNum page="1" footnote="1" endnote="1" pic="1" tbl="1" equation="1"/>
   <hh:refList>
     <hh:fontfaces itemCnt="1">
@@ -265,41 +307,54 @@ def header_xml():
 
 def content_hpf_xml():
     return """<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
-<opf:package xmlns:opf="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">
+<opf:package xmlns:opf="http://www.idpf.org/2007/opf/" xmlns:hpf="http://www.hancom.co.kr/schema/2011/hpf" version="" unique-identifier="" id="">
   <opf:metadata><opf:title>시험지-hwp변환</opf:title><opf:language>ko</opf:language></opf:metadata>
   <opf:manifest>
-    <opf:item id="header" href="header.xml" media-type="application/xml"/>
-    <opf:item id="section0" href="section0.xml" media-type="application/xml"/>
+    <opf:item id="header" href="Contents/header.xml" media-type="application/xml"/>
+    <opf:item id="section0" href="Contents/section0.xml" media-type="application/xml"/>
+    <opf:item id="settings" href="settings.xml" media-type="application/xml"/>
   </opf:manifest>
-  <opf:spine><opf:itemref idref="section0"/></opf:spine>
+  <opf:spine><opf:itemref idref="header" linear="yes"/><opf:itemref idref="section0" linear="yes"/></opf:spine>
 </opf:package>"""
 
 
 def container_xml():
     return """<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
-<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container" version="1.0">
-  <rootfiles><rootfile full-path="Contents/content.hpf" media-type="application/hwpml-package+xml"/></rootfiles>
-</container>"""
+<ocf:container xmlns:ocf="urn:oasis:names:tc:opendocument:xmlns:container" xmlns:hpf="http://www.hancom.co.kr/schema/2011/hpf">
+  <ocf:rootfiles>
+    <ocf:rootfile full-path="Contents/content.hpf" media-type="application/hwpml-package+xml"/>
+    <ocf:rootfile full-path="Preview/PrvText.txt" media-type="text/plain"/>
+    <ocf:rootfile full-path="META-INF/container.rdf" media-type="application/rdf+xml"/>
+  </ocf:rootfiles>
+</ocf:container>"""
+
+
+def container_rdf_xml():
+    return """<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""><pkg:hasPart xmlns:pkg="http://www.hancom.co.kr/hwpml/2016/meta/pkg#" rdf:resource="Contents/header.xml"/></rdf:Description>
+  <rdf:Description rdf:about="Contents/header.xml"><rdf:type rdf:resource="http://www.hancom.co.kr/hwpml/2016/meta/pkg#HeaderFile"/></rdf:Description>
+  <rdf:Description rdf:about=""><pkg:hasPart xmlns:pkg="http://www.hancom.co.kr/hwpml/2016/meta/pkg#" rdf:resource="Contents/section0.xml"/></rdf:Description>
+  <rdf:Description rdf:about="Contents/section0.xml"><rdf:type rdf:resource="http://www.hancom.co.kr/hwpml/2016/meta/pkg#SectionFile"/></rdf:Description>
+  <rdf:Description rdf:about=""><rdf:type rdf:resource="http://www.hancom.co.kr/hwpml/2016/meta/pkg#Document"/></rdf:Description>
+</rdf:RDF>"""
 
 
 def manifest_xml():
     return """<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
-<manifest xmlns="urn:oasis:names:tc:opendocument:xmlns:manifest">
-  <file-entry full-path="/" media-type="application/hwp+zip"/>
-  <file-entry full-path="Contents/content.hpf" media-type="application/hwpml-package+xml"/>
-  <file-entry full-path="Contents/header.xml" media-type="application/xml"/>
-  <file-entry full-path="Contents/section0.xml" media-type="application/xml"/>
-</manifest>"""
+<odf:manifest xmlns:odf="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0"/>"""
 
 
 def version_xml():
     return """<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
-<hv:HCFVersion xmlns:hv="http://www.hancom.co.kr/hwpml/2011/version" targetApplication="HWP" major="5" minor="1" micro="0" buildNumber="0"/>"""
+<hv:HCFVersion xmlns:hv="http://www.hancom.co.kr/hwpml/2011/version" targetApplication="WORDPROCESSOR" major="5" minor="1" micro="0" buildNumber="1" os="1" xmlVersion="1.4" application="Hancom Office Hangul"/>"""
 
 
 def settings_xml():
     return """<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
-<ha:settings xmlns:ha="http://www.hancom.co.kr/hwpml/2011/app" caretPosition="0"/>"""
+<ha:HWPApplicationSetting xmlns:ha="http://www.hancom.co.kr/hwpml/2011/app" xmlns:config="urn:oasis:names:tc:opendocument:xmlns:config:1.0">
+  <ha:CaretPosition listIDRef="0" paraIDRef="0" pos="0"/>
+</ha:HWPApplicationSetting>"""
 
 
 def xml(value):

@@ -12,6 +12,7 @@ const TMP_DIR = path.join(__dirname, "tmp");
 const JOBS_DIR = path.join(TMP_DIR, "jobs");
 const PORT = Number(process.env.PORT || 3025);
 const MAX_UPLOAD_BYTES = 80 * 1024 * 1024;
+const MAX_OUTPUT_TOKENS = Number(process.env.AI_MAX_OUTPUT_TOKENS || 32768);
 const DEFAULT_MODEL = "gemini-3.1-flash-lite";
 
 await loadLocalEnv();
@@ -110,9 +111,112 @@ async function handleConvert(req, res) {
 }
 
 async function analyzePdf({ apiKey, model, pdfBuffer, filename, options }) {
-  const prompt = [
+  const pageCount = estimatePdfPageCount(pdfBuffer);
+  if (pageCount >= 3) {
+    const rangedPayload = await analyzePdfByPageRanges({ apiKey, model, pdfBuffer, filename, options, pageCount });
+    const rangedCount = Array.isArray(rangedPayload?.problems) ? rangedPayload.problems.length : 0;
+    if (rangedCount > 5) return rangedPayload;
+  }
+
+  const prompt = buildAnalysisPrompt({ filename, options });
+  const text = await requestAiJson({
+    apiKey,
+    model,
+    parts: [
+      {
+        inline_data: {
+          mime_type: "application/pdf",
+          data: pdfBuffer.toString("base64"),
+        },
+      },
+      { text: prompt },
+    ],
+  });
+
+  let payload = await parseOrRepairAiJson({ apiKey, model, text });
+  const problemCount = Array.isArray(payload?.problems) ? payload.problems.length : 0;
+  if (problemCount > 0 && problemCount <= 5) {
+    const retryText = await requestAiJson({
+      apiKey,
+      model,
+      parts: [
+        {
+          inline_data: {
+            mime_type: "application/pdf",
+            data: pdfBuffer.toString("base64"),
+          },
+        },
+        {
+          text: [
+            "앞선 응답이 5문항 이하라서 누락 가능성이 큽니다.",
+            "PDF의 모든 페이지를 다시 확인하고, 번호가 붙은 수학 문항을 처음부터 끝까지 전부 추출하세요.",
+            "문항 일부만 반환하지 말고 전체 시험지를 대상으로 JSON 객체 하나만 반환하세요.",
+            "마크다운, 코드블록, 설명문은 쓰지 마세요.",
+            "",
+            `파일명: ${filename}`,
+            `학년: 중${options.grade}`,
+            `범위: ${options.range}`,
+            "",
+            "반환 형식은 이전 스키마와 동일합니다.",
+          ].join("\n"),
+        },
+      ],
+    });
+    const retryPayload = await parseOrRepairAiJson({ apiKey, model, text: retryText });
+    const retryCount = Array.isArray(retryPayload?.problems) ? retryPayload.problems.length : 0;
+    if (retryCount > problemCount) payload = retryPayload;
+  }
+
+  return payload;
+}
+
+async function analyzePdfByPageRanges({ apiKey, model, pdfBuffer, filename, options, pageCount }) {
+  const chunks = [];
+  for (let start = 1; start <= pageCount; start += 2) {
+    chunks.push({ start, end: Math.min(start + 1, pageCount) });
+  }
+
+  const payloads = [];
+  for (const range of chunks) {
+    const prompt = buildAnalysisPrompt({ filename, options, pageCount, pageRange: range });
+    const text = await requestAiJson({
+      apiKey,
+      model,
+      parts: [
+        {
+          inline_data: {
+            mime_type: "application/pdf",
+            data: pdfBuffer.toString("base64"),
+          },
+        },
+        { text: prompt },
+      ],
+    });
+    const payload = await parseOrRepairAiJson({ apiKey, model, text });
+    payloads.push(payload);
+  }
+
+  return mergeProblemPayloads(payloads, options);
+}
+
+function buildAnalysisPrompt({ filename, options, pageCount = 0, pageRange = null }) {
+  const scope = pageRange
+    ? [
+        `이번 요청은 전체 ${pageCount}쪽 PDF 중 ${pageRange.start}쪽부터 ${pageRange.end}쪽까지의 문항만 추출합니다.`,
+        "다른 페이지의 문항은 넣지 마세요.",
+        "문항 번호는 PDF에 보이는 원래 번호를 유지하세요.",
+        "한 문항이 페이지 경계에 걸쳐 있으면 이 구간에서 보이는 내용을 최대한 포함하세요.",
+      ]
+    : [
+        "PDF의 첫 페이지부터 마지막 페이지까지 모든 페이지를 확인하세요.",
+        "수학 문항을 일부만 요약하지 말고 번호 순서대로 전부 추출하세요.",
+        "학교 시험지는 보통 20문항 이상일 수 있습니다. 5문항만 반환하고 멈추지 마세요.",
+      ];
+
+  return [
     "중학교 수학 시험지 PDF를 읽고 HWPX 변환용 JSON만 반환하세요.",
-    "수학 문항만 순서대로 추출하고 정답과 짧은 해설을 작성하세요.",
+    ...scope,
+    "수학 문항마다 정답과 짧은 해설을 작성하세요.",
     "마크다운, 코드블록, 설명문 없이 JSON 객체만 반환하세요.",
     "",
     `파일명: ${filename}`,
@@ -142,46 +246,6 @@ async function analyzePdf({ apiKey, model, pdfBuffer, filename, options }) {
     "- 해설은 짧게 작성하세요.",
     "- 모든 배열 요소와 객체 속성 사이에 쉼표를 넣은 엄격한 JSON 문법을 지키세요.",
   ].join("\n");
-
-  const text = await requestAiJson({
-    apiKey,
-    model,
-    parts: [
-      {
-        inline_data: {
-          mime_type: "application/pdf",
-          data: pdfBuffer.toString("base64"),
-        },
-      },
-      { text: prompt },
-    ],
-  });
-
-  const parsed = parseAiJson(text);
-  if (parsed.ok) return parsed.value;
-
-  const repairedText = await requestAiJson({
-    apiKey,
-    model,
-    parts: [
-      {
-        text: [
-          "아래 텍스트는 JSON 파싱에 실패했습니다.",
-          "내용을 추가하거나 삭제하지 말고, 문법만 고쳐서 유효한 JSON 객체 하나만 반환하세요.",
-          "마크다운, 코드블록, 설명문은 쓰지 마세요.",
-          "",
-          `파싱 오류: ${parsed.error}`,
-          "",
-          "고칠 JSON:",
-          text.slice(0, 80000),
-        ].join("\n"),
-      },
-    ],
-  });
-  const repaired = parseAiJson(repairedText);
-  if (repaired.ok) return repaired.value;
-
-  throw new Error("AI 응답 형식을 정리하지 못했습니다. 같은 PDF로 한 번 더 시도하거나 PDF를 더 작은 범위로 나눠 주세요.");
 }
 
 function parseAiJson(text) {
@@ -223,6 +287,7 @@ async function requestAiJson({ apiKey, model, parts }) {
         generationConfig: {
           temperature: 0,
           responseMimeType: "application/json",
+          maxOutputTokens: MAX_OUTPUT_TOKENS,
         },
       }),
     }
@@ -243,6 +308,34 @@ async function requestAiJson({ apiKey, model, parts }) {
   return text;
 }
 
+async function parseOrRepairAiJson({ apiKey, model, text }) {
+  const parsed = parseAiJson(text);
+  if (parsed.ok) return parsed.value;
+
+  const repairedText = await requestAiJson({
+    apiKey,
+    model,
+    parts: [
+      {
+        text: [
+          "아래 텍스트는 JSON 파싱에 실패했습니다.",
+          "내용을 추가하거나 삭제하지 말고, 문법만 고쳐서 유효한 JSON 객체 하나만 반환하세요.",
+          "마크다운, 코드블록, 설명문은 쓰지 마세요.",
+          "",
+          `파싱 오류: ${parsed.error}`,
+          "",
+          "고칠 JSON:",
+          text.slice(0, 80000),
+        ].join("\n"),
+      },
+    ],
+  });
+  const repaired = parseAiJson(repairedText);
+  if (repaired.ok) return repaired.value;
+
+  throw new Error("AI 응답 형식을 정리하지 못했습니다. 같은 PDF로 한 번 더 시도하거나 PDF를 더 작은 범위로 나눠 주세요.");
+}
+
 function tryParseJson(text) {
   try {
     return { ok: true, value: JSON.parse(text) };
@@ -261,6 +354,76 @@ function repairJsonCandidates(text) {
     normalized.replace(/}\s*\n\s*{/g, "},\n{"),
     normalized.replace(/]\s*\n\s*{/g, "],\n{").replace(/}\s*\n\s*"/g, '},\n"'),
   ];
+}
+
+function estimatePdfPageCount(pdfBuffer) {
+  const text = pdfBuffer.toString("latin1");
+  const count = (text.match(/\/Type\s*\/Page\b/g) || []).length;
+  return count > 0 && count < 500 ? count : 0;
+}
+
+function mergeProblemPayloads(payloads, options) {
+  const merged = [];
+  const seen = new Map();
+  let title = "";
+
+  for (const payload of payloads) {
+    if (!title && typeof payload?.title === "string") title = payload.title;
+    const problems = Array.isArray(payload?.problems) ? payload.problems : [];
+    for (const problem of problems) {
+      const normalized = {
+        ...problem,
+        parts: normalizeParts(problem?.parts || problem?.question || ""),
+        choices: normalizeChoices(problem?.choices),
+        explanation_parts: normalizeParts(problem?.explanation_parts || problem?.explanation || ""),
+      };
+      const key = problemMergeKey(normalized);
+      const prevIndex = seen.get(key);
+      if (prevIndex === undefined) {
+        seen.set(key, merged.length);
+        merged.push(normalized);
+      } else if (problemTextLength(normalized) > problemTextLength(merged[prevIndex])) {
+        merged[prevIndex] = normalized;
+      }
+    }
+  }
+
+  merged.sort((a, b) => {
+    const an = Number(a.number);
+    const bn = Number(b.number);
+    if (Number.isFinite(an) && Number.isFinite(bn) && an !== bn) return an - bn;
+    return problemTextValue(a).localeCompare(problemTextValue(b), "ko");
+  });
+
+  return {
+    title: title || `${options.school} ${options.range}`,
+    problems: merged,
+  };
+}
+
+function problemMergeKey(problem) {
+  const number = Number(problem?.number);
+  const textKey = problemTextValue(problem).replace(/\s+/g, "").slice(0, 80);
+  if (Number.isFinite(number) && number > 0) return `n:${number}:${textKey}`;
+  return `t:${textKey}`;
+}
+
+function problemTextLength(problem) {
+  return problemTextValue(problem).length;
+}
+
+function problemTextValue(problem) {
+  return [
+    problem?.topic || "",
+    partsToPlainText(problem?.parts || []),
+    (problem?.choices || []).map((choice) => partsToPlainText(choice)).join(" "),
+  ].join(" ");
+}
+
+function partsToPlainText(parts) {
+  return normalizeParts(parts)
+    .map((part) => part.eq || part.t || "")
+    .join(" ");
 }
 
 function normalizePayload(payload, options) {

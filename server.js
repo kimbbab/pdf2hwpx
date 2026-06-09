@@ -11,7 +11,7 @@ const PUBLIC_DIR = path.join(__dirname, "public");
 const TMP_DIR = path.join(__dirname, "tmp");
 const JOBS_DIR = path.join(TMP_DIR, "jobs");
 const PORT = Number(process.env.PORT || 3025);
-const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = 80 * 1024 * 1024;
 const DEFAULT_MODEL = "gemini-3.1-flash-lite";
 
 await loadLocalEnv();
@@ -22,7 +22,8 @@ createServer(async (req, res) => {
     const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
 
     if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/") {
-      return sendFile(res, path.join(PUBLIC_DIR, "index.html"), "text/html; charset=utf-8", req.method === "HEAD");
+      await sendFile(res, path.join(PUBLIC_DIR, "index.html"), "text/html; charset=utf-8", req.method === "HEAD");
+      return;
     }
 
     if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/health") {
@@ -34,17 +35,20 @@ createServer(async (req, res) => {
     }
 
     if (req.method === "POST" && url.pathname === "/api/convert") {
-      return handleConvert(req, res);
+      await handleConvert(req, res);
+      return;
     }
 
     const downloadMatch = url.pathname.match(/^\/download\/([a-f0-9-]+)$/i);
     if (req.method === "GET" && downloadMatch) {
-      return handleDownload(res, downloadMatch[1]);
+      await handleDownload(res, downloadMatch[1]);
+      return;
     }
 
     sendJson(res, 404, { error: "페이지를 찾을 수 없습니다." });
   } catch (error) {
-    sendJson(res, 500, { error: publicError(error) });
+    if (!res.headersSent) sendJson(res, error.statusCode || 500, { error: publicError(error) });
+    else res.destroy();
   }
 }).listen(PORT, () => {
   console.log(`pdf2hwpx-clean listening on http://localhost:${PORT}`);
@@ -54,6 +58,10 @@ async function handleConvert(req, res) {
   const contentType = req.headers["content-type"] || "";
   if (!contentType.includes("multipart/form-data")) {
     return sendJson(res, 400, { error: "PDF 파일을 업로드해 주세요." });
+  }
+  const contentLength = Number(req.headers["content-length"] || 0);
+  if (contentLength > MAX_UPLOAD_BYTES) {
+    return sendJson(res, 413, { error: uploadLimitMessage() });
   }
 
   const body = await readRequestBody(req, MAX_UPLOAD_BYTES);
@@ -303,10 +311,18 @@ async function readRequestBody(req, limit) {
   let total = 0;
   for await (const chunk of req) {
     total += chunk.length;
-    if (total > limit) throw new Error("20MB 이하 PDF만 업로드할 수 있습니다.");
+    if (total > limit) {
+      const error = new Error(uploadLimitMessage());
+      error.statusCode = 413;
+      throw error;
+    }
     chunks.push(chunk);
   }
   return Buffer.concat(chunks);
+}
+
+function uploadLimitMessage() {
+  return `${Math.floor(MAX_UPLOAD_BYTES / 1024 / 1024)}MB 이하 PDF만 업로드할 수 있습니다.`;
 }
 
 function parseMultipart(buffer, contentType) {

@@ -171,32 +171,48 @@ async function analyzePdf({ apiKey, model, pdfBuffer, filename, options }) {
 }
 
 async function analyzePdfByPageRanges({ apiKey, model, pdfBuffer, filename, options, pageCount }) {
-  const chunks = [];
+  const payloads = [];
+  const failedRanges = [];
+
   for (let start = 1; start <= pageCount; start += 2) {
-    chunks.push({ start, end: Math.min(start + 1, pageCount) });
+    const range = { start, end: Math.min(start + 1, pageCount) };
+    try {
+      payloads.push(await analyzePageRange({ apiKey, model, pdfBuffer, filename, options, pageCount, range }));
+    } catch (error) {
+      failedRanges.push(range);
+      console.warn(`range ${range.start}-${range.end} parse failed: ${publicError(error)}`);
+    }
   }
 
-  const payloads = [];
-  for (const range of chunks) {
-    const prompt = buildAnalysisPrompt({ filename, options, pageCount, pageRange: range });
-    const text = await requestAiJson({
-      apiKey,
-      model,
-      parts: [
-        {
-          inline_data: {
-            mime_type: "application/pdf",
-            data: pdfBuffer.toString("base64"),
-          },
-        },
-        { text: prompt },
-      ],
-    });
-    const payload = await parseOrRepairAiJson({ apiKey, model, text });
-    payloads.push(payload);
+  for (const failedRange of failedRanges) {
+    for (let page = failedRange.start; page <= failedRange.end; page += 1) {
+      try {
+        payloads.push(await analyzePageRange({ apiKey, model, pdfBuffer, filename, options, pageCount, range: { start: page, end: page } }));
+      } catch (error) {
+        console.warn(`page ${page} parse failed: ${publicError(error)}`);
+      }
+    }
   }
 
   return mergeProblemPayloads(payloads, options);
+}
+
+async function analyzePageRange({ apiKey, model, pdfBuffer, filename, options, pageCount, range }) {
+  const prompt = buildAnalysisPrompt({ filename, options, pageCount, pageRange: range });
+  const text = await requestAiJson({
+    apiKey,
+    model,
+    parts: [
+      {
+        inline_data: {
+          mime_type: "application/pdf",
+          data: pdfBuffer.toString("base64"),
+        },
+      },
+      { text: prompt },
+    ],
+  });
+  return parseOrRepairAiJson({ apiKey, model, text });
 }
 
 function buildAnalysisPrompt({ filename, options, pageCount = 0, pageRange = null }) {
@@ -231,18 +247,18 @@ function buildAnalysisPrompt({ filename, options, pageCount = 0, pageRange = nul
           number: 1,
           topic: "유형 또는 단원",
           difficulty: "하|중|상",
-          parts: [{ t: "문제 텍스트" }, { eq: "x^2+3x+2" }],
-          choices: [[{ t: "보기" }], [{ eq: "2^3" }]],
+          question: "문제 본문 문자열. 수식은 가능하면 $x^2$처럼 표시",
+          choices: ["① 보기 문자열", "② 보기 문자열"],
           answer: "③",
-          explanation_parts: [{ t: "짧은 해설" }, { br: true }, { eq: "x=2" }],
+          explanation: "짧은 해설 문자열. 수식은 가능하면 $x=2$처럼 표시",
         },
       ],
     }),
     "",
     "규칙:",
-    "- 수식은 가능한 한 {\"eq\":\"...\"} 조각으로 분리하세요.",
-    "- eq에는 $ 기호를 넣지 마세요.",
-    "- 객관식 보기는 choices에 넣고, 보기가 없으면 choices는 빈 배열로 두세요.",
+    "- question, choices, explanation은 문자열로 작성하세요.",
+    "- 수식은 문자열 안에서 가능하면 $...$ 형태로 감싸세요.",
+    "- 객관식 보기는 choices에 문자열 배열로 넣고, 보기가 없으면 choices는 빈 배열로 두세요.",
     "- 해설은 짧게 작성하세요.",
     "- 모든 배열 요소와 객체 속성 사이에 쉼표를 넣은 엄격한 JSON 문법을 지키세요.",
   ].join("\n");
@@ -254,18 +270,19 @@ function parseAiJson(text) {
     .replace(/^```(?:json)?/i, "")
     .replace(/```$/i, "")
     .trim();
-  const first = cleaned.indexOf("{");
-  const last = cleaned.lastIndexOf("}");
-  const jsonText = first >= 0 && last >= first ? cleaned.slice(first, last + 1) : cleaned;
-  const direct = tryParseJson(jsonText);
-  if (direct.ok) return direct;
 
-  for (const candidate of repairJsonCandidates(jsonText)) {
-    const repaired = tryParseJson(candidate);
-    if (repaired.ok) return repaired;
+  for (const jsonText of jsonTextCandidates(cleaned)) {
+    const direct = tryParseJson(jsonText);
+    if (direct.ok) return direct;
+
+    for (const candidate of repairJsonCandidates(jsonText)) {
+      const repaired = tryParseJson(candidate);
+      if (repaired.ok) return repaired;
+    }
   }
 
-  return { ok: false, error: direct.error };
+  const lastTry = tryParseJson(cleaned);
+  return { ok: false, error: lastTry.error };
 }
 
 async function requestAiJson({ apiKey, model, parts }) {
@@ -338,10 +355,61 @@ async function parseOrRepairAiJson({ apiKey, model, text }) {
 
 function tryParseJson(text) {
   try {
-    return { ok: true, value: JSON.parse(text) };
+    return { ok: true, value: coerceAiPayload(JSON.parse(text)) };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "JSON 파싱 실패" };
   }
+}
+
+function coerceAiPayload(value) {
+  if (Array.isArray(value)) return { title: "", problems: value };
+  if (Array.isArray(value?.problems)) return value;
+  if (Array.isArray(value?.items)) return { ...value, problems: value.items };
+  if (Array.isArray(value?.questions)) return { ...value, problems: value.questions };
+  return value;
+}
+
+function jsonTextCandidates(text) {
+  const candidates = [text];
+  const objectText = extractBalancedJson(text, "{", "}");
+  if (objectText && objectText !== text) candidates.push(objectText);
+  const arrayText = extractBalancedJson(text, "[", "]");
+  if (arrayText && arrayText !== text) candidates.push(arrayText);
+  return [...new Set(candidates)];
+}
+
+function extractBalancedJson(text, openChar, closeChar) {
+  const start = text.indexOf(openChar);
+  if (start < 0) return "";
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  let lastBalanced = -1;
+
+  for (let index = start; index < text.length; index += 1) {
+    const char = text[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (char === openChar) depth += 1;
+    else if (char === closeChar) {
+      depth -= 1;
+      if (depth === 0) lastBalanced = index;
+    }
+  }
+
+  return lastBalanced >= start ? text.slice(start, lastBalanced + 1) : "";
 }
 
 function repairJsonCandidates(text) {

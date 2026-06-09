@@ -121,9 +121,12 @@ def section_properties_paragraph():
 
 
 def paragraph(parts, char="0", height=1000):
+    normalized_parts = normalize_parts(parts)
+    if any("eq" in part for part in normalized_parts):
+        height = max(height, 1300)
     runs = []
     current = []
-    for part in normalize_parts(parts):
+    for part in normalized_parts:
         if part.get("br"):
             if current:
                 runs.append(run(current, char))
@@ -204,13 +207,27 @@ def normalize_parts(parts):
 
 def strip_choice_label(parts):
     normalized = normalize_parts(parts)
+    while normalized:
+        first = normalized[0]
+        if "t" in first:
+            if first["t"].strip():
+                break
+            normalized = normalized[1:]
+            continue
+        if "eq" in first and first["eq"].strip():
+            break
+        normalized = normalized[1:]
     if not normalized:
-        return normalized
+        return []
+
     first = normalized[0]
+    label_pattern = r"^\s*(?:[①②③④⑤⑥⑦⑧⑨]|\(?[1-9]\)|[1-9][.)])\s*"
     if "t" in first:
         first = dict(first)
-        first["t"] = re.sub(r"^\s*(?:[①②③④⑤⑥⑦⑧⑨]|\(?[1-9]\)|[1-9][.)])\s*", "", first["t"])
-        return [first] + normalized[1:]
+        first["t"] = re.sub(label_pattern, "", first["t"])
+        return ([first] if first.get("t") else []) + normalized[1:]
+    if "eq" in first and re.fullmatch(label_pattern, first["eq"]):
+        return normalized[1:]
     return normalized
 
 
@@ -294,13 +311,12 @@ def plain_text(parts):
 
 
 def header_xml():
-    return """<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
-<hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" version="1.4" secCnt="1">
+    fontfaces = "".join(font_face_xml(lang) for lang in ("HANGUL", "LATIN", "HANJA", "JAPANESE", "OTHER", "SYMBOL", "USER"))
+    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" version="1.5" secCnt="1">
   <hh:beginNum page="1" footnote="1" endnote="1" pic="1" tbl="1" equation="1"/>
   <hh:refList>
-    <hh:fontfaces itemCnt="1">
-      <hh:fontface lang="HANGUL" fontCnt="1"><hh:font id="0" face="함초롬바탕" type="TTF"/></hh:fontface>
-    </hh:fontfaces>
+    <hh:fontfaces itemCnt="7">{fontfaces}</hh:fontfaces>
     <hh:borderFills itemCnt="1">
       <hh:borderFill id="0" threeD="0" shadow="0" centerLine="NONE" breakCellSeparateLine="0"/>
     </hh:borderFills>
@@ -315,6 +331,18 @@ def header_xml():
     <hh:tabProperties itemCnt="1"><hh:tabPr id="0" autoTabLeft="0" autoTabRight="0"/></hh:tabProperties>
   </hh:refList>
 </hh:head>"""
+
+
+def font_face_xml(lang):
+    fallback = "함초롬바탕" if lang in ("HANGUL", "HANJA") else "한컴바탕"
+    return (
+        f'<hh:fontface lang="{lang}" fontCnt="1">'
+        '<hh:font id="0" face="함초롬바탕" type="TTF" isEmbedded="0">'
+        f'<hh:substFont face="{fallback}" type="TTF" isEmbedded="0" binaryItemIDRef=""/>'
+        '<hh:typeInfo familyType="FCAT_UNKNOWN" weight="5" proportion="4" contrast="0" '
+        'strokeVariation="0" armStyle="0" letterform="0" midline="0" xHeight="0"/>'
+        '</hh:font></hh:fontface>'
+    )
 
 
 def content_hpf_xml():
@@ -359,7 +387,7 @@ def manifest_xml():
 
 def version_xml():
     return """<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
-<hv:HCFVersion xmlns:hv="http://www.hancom.co.kr/hwpml/2011/version" tagetApplication="WORDPROCESSOR" major="5" minor="1" micro="0" buildNumber="1" os="1" xmlVersion="1.4" application="Hancom Office Hangul"/>"""
+<hv:HCFVersion xmlns:hv="http://www.hancom.co.kr/hwpml/2011/version" tagetApplication="WORDPROCESSOR" major="5" minor="1" micro="1" buildNumber="1" os="1" xmlVersion="1.5" application="Hancom Office Hangul"/>"""
 
 
 def settings_xml():

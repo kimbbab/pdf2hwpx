@@ -523,13 +523,23 @@ function normalizeChoices(value) {
 }
 
 function stripChoiceLabelParts(parts) {
-  if (parts.length === 0) return parts;
-  const first = parts[0];
+  const normalized = parts.filter((part) => {
+    if (typeof part.t === "string") return part.t.length > 0;
+    if (typeof part.eq === "string") return part.eq.length > 0;
+    return true;
+  });
+  if (normalized.length === 0) return normalized;
+
+  const first = normalized[0];
+  const labelPattern = /^\s*(?:[①②③④⑤⑥⑦⑧⑨]|\(?[1-9]\)|[1-9][.)])\s*/;
   if (typeof first.t === "string") {
-    const stripped = first.t.replace(/^\s*(?:[①②③④⑤⑥⑦⑧⑨]|\(?[1-9]\)|[1-9][.)])\s*/, "");
-    return [{ ...first, t: stripped }, ...parts.slice(1)];
+    const stripped = first.t.replace(labelPattern, "");
+    return stripped ? [{ ...first, t: stripped }, ...normalized.slice(1)] : normalized.slice(1);
   }
-  return parts;
+  if (typeof first.eq === "string" && labelPattern.test(first.eq)) {
+    return normalized.slice(1);
+  }
+  return normalized;
 }
 
 function normalizeParts(value) {

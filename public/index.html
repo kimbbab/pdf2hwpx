@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>시험지-hwp변환</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f7f7f4;
+        --panel: #ffffff;
+        --text: #272520;
+        --muted: #777269;
+        --line: #ddd8ce;
+        --accent: #8067d8;
+        --accent-dark: #684fc2;
+        --danger: #c43d3d;
+        --success: #2d8659;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      .shell {
+        min-height: 100vh;
+        display: grid;
+        grid-template-columns: 240px minmax(0, 1fr);
+      }
+
+      aside {
+        border-right: 1px solid var(--line);
+        background: #efede8;
+        padding: 24px 16px;
+      }
+
+      aside h1 {
+        margin: 0 0 28px;
+        font-size: 19px;
+        line-height: 1.25;
+      }
+
+      nav {
+        display: grid;
+        gap: 8px;
+      }
+
+      nav span {
+        border-radius: 8px;
+        background: #e8e2fa;
+        color: #473499;
+        padding: 12px 14px;
+        font-weight: 650;
+      }
+
+      main {
+        padding: 32px;
+      }
+
+      .wrap {
+        max-width: 980px;
+      }
+
+      h2 {
+        margin: 0 0 18px;
+        font-size: 30px;
+        letter-spacing: 0;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: minmax(300px, 440px) minmax(0, 1fr);
+        gap: 20px;
+        align-items: start;
+      }
+
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 18px;
+      }
+
+      .card h3 {
+        margin: 0 0 14px;
+        font-size: 17px;
+      }
+
+      label {
+        display: grid;
+        gap: 7px;
+        margin: 0 0 14px;
+        font-size: 14px;
+        font-weight: 650;
+      }
+
+      input {
+        width: 100%;
+        min-height: 40px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 9px 11px;
+        background: #fff;
+        color: var(--text);
+        font: inherit;
+      }
+
+      .row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+
+      button,
+      .download {
+        min-height: 42px;
+        border: 0;
+        border-radius: 8px;
+        background: var(--accent);
+        color: #fff;
+        font-weight: 750;
+        font: inherit;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 10px 14px;
+        text-decoration: none;
+        cursor: pointer;
+      }
+
+      button:hover,
+      .download:hover {
+        background: var(--accent-dark);
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.65;
+      }
+
+      .status {
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.55;
+      }
+
+      .error {
+        color: var(--danger);
+      }
+
+      .success {
+        color: var(--success);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+
+      th,
+      td {
+        border-top: 1px solid var(--line);
+        padding: 9px 8px;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--muted);
+        font-weight: 650;
+      }
+
+      @media (max-width: 820px) {
+        .shell,
+        .grid,
+        .row {
+          display: block;
+        }
+
+        aside {
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+
+        main {
+          padding: 20px;
+        }
+
+        .card {
+          margin-bottom: 16px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <aside>
+        <h1>시험지-hwp변환</h1>
+        <nav>
+          <span>PDF → HWPX</span>
+        </nav>
+      </aside>
+
+      <main>
+        <div class="wrap">
+          <h2>시험지 PDF 변환</h2>
+          <div class="grid">
+            <section class="card">
+              <h3>PDF 업로드</h3>
+              <form id="form">
+                <label>
+                  PDF 파일
+                  <input id="file" name="file" type="file" accept="application/pdf" required />
+                </label>
+                <div class="row">
+                  <label>
+                    학교명
+                    <input name="school" value="학교 시험지" />
+                  </label>
+                  <label>
+                    학년
+                    <input name="grade" value="1" />
+                  </label>
+                </div>
+                <label>
+                  범위
+                  <input name="range" value="중1 수학" />
+                </label>
+                <button id="submit" type="submit">HWPX 만들기</button>
+              </form>
+            </section>
+
+            <section class="card">
+              <h3>결과</h3>
+              <div id="status" class="status">PDF를 선택하면 결과가 여기에 표시됩니다.</div>
+              <div id="result"></div>
+            </section>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <script>
+      const form = document.querySelector("#form");
+      const submit = document.querySelector("#submit");
+      const statusEl = document.querySelector("#status");
+      const resultEl = document.querySelector("#result");
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        resultEl.innerHTML = "";
+        statusEl.className = "status";
+        statusEl.textContent = "PDF를 분석하고 HWPX를 생성하는 중입니다.";
+        submit.disabled = true;
+        submit.textContent = "처리 중";
+
+        try {
+          const response = await fetch("/api/convert", {
+            method: "POST",
+            body: new FormData(form),
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || "변환에 실패했습니다.");
+
+          statusEl.className = "status success";
+          statusEl.textContent = `${data.problemCount}문항 변환 완료`;
+          resultEl.innerHTML = `
+            <p><a class="download" href="${data.downloadUrl}">HWPX 다운로드</a></p>
+            <table>
+              <thead>
+                <tr><th>번호</th><th>유형</th><th>정답</th></tr>
+              </thead>
+              <tbody>
+                ${data.problems
+                  .map(
+                    (problem) =>
+                      `<tr><td>${escapeHtml(String(problem.number))}</td><td>${escapeHtml(problem.topic || "미분류")}</td><td>${escapeHtml(problem.answer || "")}</td></tr>`
+                  )
+                  .join("")}
+              </tbody>
+            </table>
+          `;
+        } catch (error) {
+          statusEl.className = "status error";
+          statusEl.textContent = error instanceof Error ? error.message : "변환에 실패했습니다.";
+        } finally {
+          submit.disabled = false;
+          submit.textContent = "HWPX 만들기";
+        }
+      });
+
+      function escapeHtml(value) {
+        return value.replace(/[&<>"']/g, (char) => ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#039;",
+        })[char]);
+      }
+    </script>
+  </body>
+</html>

@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: pdf2hwpx
+    runtime: docker
+    plan: free
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "10000"
+      - key: AI_MODEL
+        value: gemini-3.1-flash-lite
+      - key: AI_API_KEY
+        sync: false

@@ -258,7 +258,11 @@ function buildAnalysisPrompt({ filename, options, pageCount = 0, pageRange = nul
     "규칙:",
     "- question, choices, explanation은 문자열로 작성하세요.",
     "- 수식은 문자열 안에서 가능하면 $...$ 형태로 감싸세요.",
-    "- 객관식 보기는 choices에 문자열 배열로 넣고, 보기가 없으면 choices는 빈 배열로 두세요.",
+    "- 객관식 보기는 원문에 보이는 내용만 choices에 문자열 배열로 넣고, 보기가 없으면 choices는 빈 배열로 두세요.",
+    "- choices 문자열에는 ①, ②, ③, ④, ⑤ 같은 보기 번호를 넣지 마세요. 보기 내용만 넣으세요.",
+    "- 원문에 없는 보기, 숫자, 조건, 이름을 새로 만들지 마세요.",
+    "- 그림이나 표 때문에 읽기 어려운 부분은 임의로 채우지 말고 [이미지 확인 필요]라고 쓰세요.",
+    "- 정답이나 해설이 불확실하면 추측하지 말고 확인 필요라고 쓰세요.",
     "- 해설은 짧게 작성하세요.",
     "- 모든 배열 요소와 객체 속성 사이에 쉼표를 넣은 엄격한 JSON 문법을 지키세요.",
   ].join("\n");
@@ -502,7 +506,7 @@ function normalizePayload(payload, options) {
     title: payload.title || `${options.school} ${options.range}`,
     info: options,
     problems: problems.map((problem, index) => ({
-      number: Number(problem.number) || index + 1,
+      number: index + 1,
       topic: textValue(problem.topic || problem.subtopic || "미분류"),
       difficulty: textValue(problem.difficulty || "중"),
       parts: normalizeParts(problem.parts || problem.question || ""),
@@ -515,7 +519,17 @@ function normalizePayload(payload, options) {
 
 function normalizeChoices(value) {
   if (!Array.isArray(value)) return [];
-  return value.map((choice) => normalizeParts(choice).filter((part) => !part.br));
+  return value.map((choice) => stripChoiceLabelParts(normalizeParts(choice).filter((part) => !part.br)));
+}
+
+function stripChoiceLabelParts(parts) {
+  if (parts.length === 0) return parts;
+  const first = parts[0];
+  if (typeof first.t === "string") {
+    const stripped = first.t.replace(/^\s*(?:[①②③④⑤⑥⑦⑧⑨]|\(?[1-9]\)|[1-9][.)])\s*/, "");
+    return [{ ...first, t: stripped }, ...parts.slice(1)];
+  }
+  return parts;
 }
 
 function normalizeParts(value) {

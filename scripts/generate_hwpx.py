@@ -17,7 +17,7 @@ def main():
 
     data_path = Path(sys.argv[1])
     out_path = Path(sys.argv[2])
-    data = json.loads(data_path.read_text(encoding="utf-8"))
+    data = json.loads(data_path.read_text(encoding="utf-8-sig"))
     out_path.parent.mkdir(parents=True, exist_ok=True)
     write_hwpx(data, out_path)
 
@@ -61,7 +61,7 @@ def build_section(data):
         symbols = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨"]
         for idx, choice in enumerate(choices):
             label = symbols[idx] if idx < len(symbols) else f"{idx + 1})"
-            paragraphs.append(paragraph([{"t": f"{label} "}] + list(choice), char="0"))
+            paragraphs.append(paragraph([{"t": f"{label} "}] + strip_choice_label(choice), char="0"))
 
         answer = problem.get("answer") or ""
         if answer:
@@ -200,6 +200,18 @@ def normalize_parts(parts):
         elif isinstance(part.get("text"), str):
             out.append({"t": part["text"]})
     return out
+
+
+def strip_choice_label(parts):
+    normalized = normalize_parts(parts)
+    if not normalized:
+        return normalized
+    first = normalized[0]
+    if "t" in first:
+        first = dict(first)
+        first["t"] = re.sub(r"^\s*(?:[①②③④⑤⑥⑦⑧⑨]|\(?[1-9]\)|[1-9][.)])\s*", "", first["t"])
+        return [first] + normalized[1:]
+    return normalized
 
 
 def to_hwp_eq(value):

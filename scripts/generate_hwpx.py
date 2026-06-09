@@ -7,7 +7,7 @@ import zipfile
 from pathlib import Path
 
 
-PAGE_HORZSIZE = "42520"
+PAGE_HORZSIZE = "24660"
 
 
 def main():
@@ -54,7 +54,10 @@ def build_section(data):
         number = problem.get("number", "")
         topic = problem.get("topic") or "미분류"
         difficulty = problem.get("difficulty") or "중"
-        prefix = [{"t": f"{number}. [{topic} / {difficulty}] "}]
+        prefix = [
+            {"endnote": end_note_xml(problem)},
+            {"t": f"{number}. [{topic} / {difficulty}] "},
+        ]
         paragraphs.append(paragraph(prefix + list(problem.get("parts") or []), char="0"))
 
         choices = problem.get("choices") or []
@@ -63,12 +66,6 @@ def build_section(data):
             label = symbols[idx] if idx < len(symbols) else f"{idx + 1})"
             paragraphs.append(paragraph([{"t": f"{label} "}] + strip_choice_label(choice), char="0"))
 
-        answer = problem.get("answer") or ""
-        if answer:
-            paragraphs.append(paragraph([{"t": f"정답: {answer}"}], char="2"))
-        explanation = problem.get("explanation_parts") or []
-        if explanation:
-            paragraphs.append(paragraph([{"t": "해설: "}] + list(explanation), char="0"))
         paragraphs.append(paragraph([{"t": ""}], char="0"))
 
     return (
@@ -92,7 +89,7 @@ def section_properties_paragraph():
         '<hp:visibility hideFirstHeader="0" hideFirstFooter="0" hideFirstMasterPage="0" '
         'border="SHOW_ALL" fill="SHOW_ALL" hideFirstPageNum="0" hideFirstEmptyLine="0" showLineNumber="0"/>'
         '<hp:lineNumberShape restartType="0" countBy="0" distance="0" startNumber="0"/>'
-        '<hp:pagePr landscape="NARROWLY" width="59528" height="84186" gutterType="LEFT_ONLY">'
+        '<hp:pagePr landscape="WIDELY" width="59528" height="84186" gutterType="LEFT_ONLY">'
         '<hp:margin header="0" footer="0" gutter="0" left="4251" right="4251" top="4251" bottom="4251"/>'
         '</hp:pagePr>'
         '<hp:footNotePr><hp:autoNumFormat type="DIGIT" userChar="" prefixChar="" suffixChar=")" supscript="0"/>'
@@ -110,7 +107,7 @@ def section_properties_paragraph():
         '<hp:offset left="1417" right="1417" top="1417" bottom="1417"/>'
         '</hp:pageBorderFill>'
         '</hp:secPr>'
-        '<hp:ctrl><hp:colPr id="" type="NEWSPAPER" layout="LEFT" colCount="1" sameSz="1" sameGap="0"/></hp:ctrl>'
+        '<hp:ctrl><hp:colPr id="" type="NEWSPAPER" layout="LEFT" colCount="2" sameSz="1" sameGap="1701"/></hp:ctrl>'
     )
     return (
         '<hp:p id="2147483648" paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">'
@@ -151,6 +148,8 @@ def run(parts, char):
     for part in parts:
         if "eq" in part:
             content.append(equation_xml(to_hwp_eq(part["eq"])))
+        elif "endnote" in part:
+            content.append(part["endnote"])
         else:
             content.append(f"<hp:t>{xml(part.get('t', ''))}</hp:t>")
     return f'<hp:run charPrIDRef="{char}">' + "".join(content) + "</hp:run>"
@@ -161,7 +160,7 @@ def line_break():
 
 
 def equation_xml(script):
-    width = max(1200, min(30000, 470 * len(script) + 900))
+    width = max(1200, min(22000, 470 * len(script) + 900))
     return (
         '<hp:equation id="0" zOrder="0" numberingType="EQUATION" textWrap="TOP_AND_BOTTOM" '
         'textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" version="Equation Version 60" '
@@ -194,6 +193,8 @@ def normalize_parts(parts):
             out.append({"t": str(part)})
         elif part.get("br") is True:
             out.append({"br": True})
+        elif isinstance(part.get("endnote"), str):
+            out.append({"endnote": part["endnote"]})
         elif isinstance(part.get("eq"), str):
             out.append({"eq": part["eq"]})
         elif isinstance(part.get("math"), str):
@@ -203,6 +204,42 @@ def normalize_parts(parts):
         elif isinstance(part.get("text"), str):
             out.append({"t": part["text"]})
     return out
+
+
+def end_note_xml(problem):
+    number = int(problem.get("number") or 0)
+    if number <= 0:
+        number = 1
+    answer = str(problem.get("answer") or "확인 필요").strip()
+    explanation = problem.get("explanation_parts") or [{"t": "해설을 확인하세요."}]
+    inst_id = 1654899000 + number
+    return (
+        '<hp:ctrl>'
+        f'<hp:endNote number="{number}" suffixChar="46" instId="{inst_id}">'
+        '<hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="TOP" '
+        'linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">'
+        + endnote_answer_paragraph(number, answer)
+        + paragraph([{"t": " 풀이: "}] + list(explanation), char="0", height=1200)
+        + '</hp:subList>'
+        '</hp:endNote>'
+        '</hp:ctrl>'
+    )
+
+
+def endnote_answer_paragraph(number, answer):
+    return (
+        '<hp:p id="2147483648" paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">'
+        '<hp:run charPrIDRef="2">'
+        '<hp:ctrl>'
+        f'<hp:autoNum num="{number}" numType="ENDNOTE">'
+        '<hp:autoNumFormat type="DIGIT" userChar="" prefixChar="" suffixChar="." supscript="0"/>'
+        '</hp:autoNum>'
+        '</hp:ctrl>'
+        '</hp:run>'
+        f'<hp:run charPrIDRef="0"><hp:t> 답 {xml(answer)}</hp:t></hp:run>'
+        + make_lineseg(1200)
+        + '</hp:p>'
+    )
 
 
 def strip_choice_label(parts):

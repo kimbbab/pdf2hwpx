@@ -347,7 +347,7 @@ def manifest_xml():
 
 def version_xml():
     return """<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
-<hv:HCFVersion xmlns:hv="http://www.hancom.co.kr/hwpml/2011/version" targetApplication="WORDPROCESSOR" major="5" minor="1" micro="0" buildNumber="1" os="1" xmlVersion="1.4" application="Hancom Office Hangul"/>"""
+<hv:HCFVersion xmlns:hv="http://www.hancom.co.kr/hwpml/2011/version" tagetApplication="WORDPROCESSOR" major="5" minor="1" micro="0" buildNumber="1" os="1" xmlVersion="1.4" application="Hancom Office Hangul"/>"""
 
 
 def settings_xml():

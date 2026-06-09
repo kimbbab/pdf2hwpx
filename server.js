@@ -140,8 +140,71 @@ async function analyzePdf({ apiKey, model, pdfBuffer, filename, options }) {
     "- eq에는 $ 기호를 넣지 마세요.",
     "- 객관식 보기는 choices에 넣고, 보기가 없으면 choices는 빈 배열로 두세요.",
     "- 해설은 짧게 작성하세요.",
+    "- 모든 배열 요소와 객체 속성 사이에 쉼표를 넣은 엄격한 JSON 문법을 지키세요.",
   ].join("\n");
 
+  const text = await requestAiJson({
+    apiKey,
+    model,
+    parts: [
+      {
+        inline_data: {
+          mime_type: "application/pdf",
+          data: pdfBuffer.toString("base64"),
+        },
+      },
+      { text: prompt },
+    ],
+  });
+
+  const parsed = parseAiJson(text);
+  if (parsed.ok) return parsed.value;
+
+  const repairedText = await requestAiJson({
+    apiKey,
+    model,
+    parts: [
+      {
+        text: [
+          "아래 텍스트는 JSON 파싱에 실패했습니다.",
+          "내용을 추가하거나 삭제하지 말고, 문법만 고쳐서 유효한 JSON 객체 하나만 반환하세요.",
+          "마크다운, 코드블록, 설명문은 쓰지 마세요.",
+          "",
+          `파싱 오류: ${parsed.error}`,
+          "",
+          "고칠 JSON:",
+          text.slice(0, 80000),
+        ].join("\n"),
+      },
+    ],
+  });
+  const repaired = parseAiJson(repairedText);
+  if (repaired.ok) return repaired.value;
+
+  throw new Error("AI 응답 형식을 정리하지 못했습니다. 같은 PDF로 한 번 더 시도하거나 PDF를 더 작은 범위로 나눠 주세요.");
+}
+
+function parseAiJson(text) {
+  const cleaned = text
+    .trim()
+    .replace(/^```(?:json)?/i, "")
+    .replace(/```$/i, "")
+    .trim();
+  const first = cleaned.indexOf("{");
+  const last = cleaned.lastIndexOf("}");
+  const jsonText = first >= 0 && last >= first ? cleaned.slice(first, last + 1) : cleaned;
+  const direct = tryParseJson(jsonText);
+  if (direct.ok) return direct;
+
+  for (const candidate of repairJsonCandidates(jsonText)) {
+    const repaired = tryParseJson(candidate);
+    if (repaired.ok) return repaired;
+  }
+
+  return { ok: false, error: direct.error };
+}
+
+async function requestAiJson({ apiKey, model, parts }) {
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
     {
@@ -154,19 +217,11 @@ async function analyzePdf({ apiKey, model, pdfBuffer, filename, options }) {
         contents: [
           {
             role: "user",
-            parts: [
-              {
-                inline_data: {
-                  mime_type: "application/pdf",
-                  data: pdfBuffer.toString("base64"),
-                },
-              },
-              { text: prompt },
-            ],
+            parts,
           },
         ],
         generationConfig: {
-          temperature: 0.1,
+          temperature: 0,
           responseMimeType: "application/json",
         },
       }),
@@ -185,19 +240,27 @@ async function analyzePdf({ apiKey, model, pdfBuffer, filename, options }) {
     .join("\n")
     .trim();
   if (!text) throw new Error("AI 응답을 읽지 못했습니다.");
-  return parseAiJson(text);
+  return text;
 }
 
-function parseAiJson(text) {
-  const cleaned = text
-    .trim()
-    .replace(/^```(?:json)?/i, "")
-    .replace(/```$/i, "")
-    .trim();
-  const first = cleaned.indexOf("{");
-  const last = cleaned.lastIndexOf("}");
-  const jsonText = first >= 0 && last >= first ? cleaned.slice(first, last + 1) : cleaned;
-  return JSON.parse(jsonText);
+function tryParseJson(text) {
+  try {
+    return { ok: true, value: JSON.parse(text) };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "JSON 파싱 실패" };
+  }
+}
+
+function repairJsonCandidates(text) {
+  const normalized = text
+    .replace(/\r\n/g, "\n")
+    .replace(/,\s*([}\]])/g, "$1");
+
+  return [
+    normalized,
+    normalized.replace(/}\s*\n\s*{/g, "},\n{"),
+    normalized.replace(/]\s*\n\s*{/g, "],\n{").replace(/}\s*\n\s*"/g, '},\n"'),
+  ];
 }
 
 function normalizePayload(payload, options) {

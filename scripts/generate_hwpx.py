@@ -349,6 +349,13 @@ def plain_text(parts):
 
 def header_xml():
     fontfaces = "".join(font_face_xml(lang) for lang in ("HANGUL", "LATIN", "HANJA", "JAPANESE", "OTHER", "SYMBOL", "USER"))
+    char_properties = "".join(
+        [
+            char_pr_xml("0", "1000", "#000000", bold=False),
+            char_pr_xml("1", "1400", "#000000", bold=True),
+            char_pr_xml("2", "1000", "#1f5f3d", bold=True),
+        ]
+    )
     return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
 <hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" version="1.5" secCnt="1">
   <hh:beginNum page="1" footnote="1" endnote="1" pic="1" tbl="1" equation="1"/>
@@ -358,9 +365,7 @@ def header_xml():
       <hh:borderFill id="0" threeD="0" shadow="0" centerLine="NONE" breakCellSeparateLine="0"/>
     </hh:borderFills>
     <hh:charProperties itemCnt="3">
-      <hh:charPr id="0" height="1000" textColor="#000000" shadeColor="NONE" useFontSpace="0" useKerning="0" symMark="NONE" borderFillIDRef="0"><hh:fontRef hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/></hh:charPr>
-      <hh:charPr id="1" height="1400" textColor="#000000" shadeColor="NONE" useFontSpace="0" useKerning="0" symMark="NONE" borderFillIDRef="0"><hh:fontRef hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:bold/></hh:charPr>
-      <hh:charPr id="2" height="1000" textColor="#1f5f3d" shadeColor="NONE" useFontSpace="0" useKerning="0" symMark="NONE" borderFillIDRef="0"><hh:fontRef hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:bold/></hh:charPr>
+      {char_properties}
     </hh:charProperties>
     <hh:paraProperties itemCnt="1">
       <hh:paraPr id="0" tabPrIDRef="0" condense="0" fontLineHeight="0" snapToGrid="1" suppressLineNumbers="0" checked="0"><hh:align horizontal="JUSTIFY" vertical="BASELINE"/><hh:heading type="NONE" idRef="0" level="0"/><hh:breakSetting breakLatinWord="KEEP_WORD" breakNonLatinWord="KEEP_WORD" widowOrphan="0" keepWithNext="0" keepLines="0" pageBreakBefore="0" lineWrap="BREAK"/><hh:lineSpacing type="PERCENT" value="160" unit="HWPUNIT"/></hh:paraPr>
@@ -379,6 +384,27 @@ def font_face_xml(lang):
         '<hh:typeInfo familyType="FCAT_UNKNOWN" weight="5" proportion="4" contrast="0" '
         'strokeVariation="0" armStyle="0" letterform="0" midline="0" xHeight="0"/>'
         '</hh:font></hh:fontface>'
+    )
+
+
+def char_pr_xml(id_value, height, color, bold=False):
+    langs = 'hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"'
+    zeros = 'hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"'
+    bold_xml = "<hh:bold/>" if bold else ""
+    return (
+        f'<hh:charPr id="{id_value}" height="{height}" textColor="{color}" shadeColor="NONE" '
+        'useFontSpace="0" useKerning="0" symMark="NONE" borderFillIDRef="0">'
+        '<hh:fontRef hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/>'
+        f'<hh:ratio {langs}/>'
+        f'<hh:spacing {zeros}/>'
+        f'<hh:relSz {langs}/>'
+        f'<hh:offset {zeros}/>'
+        f'{bold_xml}'
+        '<hh:underline type="NONE" shape="SOLID" color="#000000"/>'
+        '<hh:strikeout shape="NONE" color="#000000"/>'
+        '<hh:outline type="NONE"/>'
+        '<hh:shadow type="NONE" color="#B2B2B2" offsetX="10" offsetY="10"/>'
+        '</hh:charPr>'
     )
 
 
